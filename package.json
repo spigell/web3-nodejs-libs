@@ -1,0 +1,29 @@
+{
+  "name": "@spigell/web3-nodejs-libs",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@aptos-labs/ts-sdk": "^1.33.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-prometheus": "^0.55.0",
+    "axios": "^1.7.8",
+    "express": "^4.21.1",
+    "express-winston": "^4.2.0",
+    "winston": "^3.13.1"
+  },
+  "devDependencies": {
+    "@types/dotenv-safe": "^8.1.6",
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^10.0.0",
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.5",
+    "lint-staged": "^15.2.9",
+    "prettier": "^3.3.3",
+    "typescript": "^4.4.3"
+  },
+  "scripts": {
+    "build": "tsc && cp -v package.json dist/",
+    "watch": "concurrently \"tsc --build --watch\" \"cp -v package.json dist/\""
+  }
+}
