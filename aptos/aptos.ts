@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { ClientRequest, ClientResponse } from '@aptos-labs/ts-sdk';
-import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
+import { Aptos as AptosClient, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import {
   CoinInfo,
   FungibleAssetMetadata,
@@ -29,12 +29,12 @@ const overridedTokenNames = new Map<string, string>([
   ],
 ]);
 
-export class Blockchain {
-  private aptos: Aptos;
+export class Aptos {
+  private aptos: AptosClient;
   private prom: PromClient;
 
   constructor() {
-    this.aptos = new Aptos(
+    this.aptos = new AptosClient(
       new AptosConfig({
         network: Network.MAINNET,
         fullnode: 'https://api.mainnet.aptoslabs.com/v1',
@@ -43,7 +43,7 @@ export class Blockchain {
     );
   }
 
-  public withPrometheusClient(prom: PromClient): Blockchain {
+  public withPrometheusClient(prom: PromClient): Aptos {
     this.prom = prom;
     this.prom.registerObservableCounter(
       metrics.REQUEST_ERROR.name,
