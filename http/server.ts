@@ -1,5 +1,5 @@
 import express from 'express';
-import { App } from '../app/app';
+import { App } from '../app/app.js';
 import { PromClient } from '../prometheus-client/client.js';
 import { createMiddleware } from '../logger/middleware.js';
 

@@ -15,24 +15,36 @@ export async function simple<T>(
   retries: number = 3,
   delay: number = 1000,
 ): Promise<{ result: T; tries: number }> {
+  if (retries < 1) {
+    throw new Error('The number of retries must be at least 1.');
+  }
+
   let attempts = 0;
+  let lastError: Error | null = null;
 
   while (attempts < retries) {
     try {
-      const result = await fn();
-      return { result, tries: attempts + 1 };
-    } catch (error) {
       attempts++;
-
+      const result = await fn(); // Try the provided function
+      return { result, tries: attempts }; // Return the result on success
+    } catch (error) {
+      lastError = error as Error; // Type assertion for the caught error
       if (attempts >= retries) {
         throw new RetryError(
           `Maximum retries reached (${retries}).`,
           attempts,
-          error.message,
+          lastError,
         );
       }
-
+      // Exponential backoff with delay
       await new Promise((resolve) => setTimeout(resolve, delay * attempts));
     }
   }
+
+  // Fallback, should not reach here
+  throw new RetryError(
+    'Unexpected exit from retry logic.',
+    attempts,
+    lastError!,
+  );
 }

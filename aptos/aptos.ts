@@ -31,7 +31,8 @@ const overridedTokenNames = new Map<string, string>([
 
 export class Aptos {
   private aptos: AptosClient;
-  private prom: PromClient;
+  // Fix it
+  private prom: any;
 
   constructor() {
     this.aptos = new AptosClient(
