@@ -1,9 +1,14 @@
 import axios, { AxiosError } from 'axios';
-import { MiraAmm, PoolId } from 'mira-dex-ts';
+import { MiraAmm, PoolId, ReadonlyMiraAmm } from 'mira-dex-ts';
 import * as retry from '../../../utils/retry.js';
 import { FuelWallet } from '../../wallet/wallet.js';
 import { futureDeadline } from './utils.js';
 import { Provider } from 'fuels';
+
+// Configure axios instance with timeout
+const axiosInstance = axios.create({
+  timeout: 5000, // Set timeout to 5 seconds
+});
 
 // Define the response type for the `find_route` API
 type FindRouteResponse = {
@@ -16,28 +21,110 @@ type FindRouteResponse = {
 type PathStep = [string, string, boolean];
 
 // Define the response type for the `find_route` API
-type BestRoute = {
+export type Route = {
   path: PathStep[];
+  raw: Amounts;
+  previewed: Amounts;
+};
+
+type Amounts = {
   inputAmount: string;
   outputAmount: string;
+};
+
+// Define the structure of a Coin
+type Coin = {
+  id: string;
+  symbol: string;
+  decimals: number;
 };
 
 // MiraApiService class
 export class MiraAPIService {
   private static readonly BASE_URL = 'https://prod.api.mira.ly';
+  private static readonly INDEXER_URL =
+    'https://49f988ac-a875-4740-a610-478af353216d.squids.live/mira-indexer/v/v1/graphql';
   private static readonly HEADERS = {
     accept: '*/*',
     'accept-language': 'en-US,en;q=0.9',
     'content-type': 'application/json',
   };
-  private provider: Provider;
-  private wallet: FuelWallet;
-  private miraAmm: MiraAmm;
+  private static readonly INDEXER_HEADERS = {
+    accept: 'application/graphql-response+json, application/json',
+    'cache-control': 'no-cache',
+    'content-type': 'application/json',
+  };
+  private miraAmmReadonly: ReadonlyMiraAmm;
+  protected provider: Provider;
 
-  constructor(provider: Provider, wallet: FuelWallet) {
+  constructor(provider: Provider) {
     this.provider = provider;
-    this.wallet = wallet;
-    this.miraAmm = new MiraAmm(wallet.getWallet());
+    this.miraAmmReadonly = new ReadonlyMiraAmm(provider);
+  }
+
+  /**
+   * Fetch all coins with their decimals from the indexer.
+   * @returns - Promise of an array containing coin details
+   */
+  async getCoinsWithDecimals(): Promise<Coin[]> {
+    const query = `
+      query CoinsQuery {
+        pools {
+          asset0 {
+            id
+            symbol
+            decimals
+          }
+          asset1 {
+            id
+            symbol
+            decimals
+          }
+        }
+      }
+    `;
+
+    const response = await retry.simple(
+      async () => {
+        return await axiosInstance.post(
+          MiraAPIService.INDEXER_URL,
+          { query },
+          {
+            headers: MiraAPIService.INDEXER_HEADERS,
+          },
+        );
+      },
+      2,
+      5000,
+    );
+
+    const assets: Coin[] = [];
+
+    response.result.data.data.pools.forEach((pool: any) => {
+      if (pool.asset0) {
+        assets.push({
+          id: pool.asset0.id,
+          symbol: pool.asset0.symbol,
+          decimals: pool.asset0.decimals,
+        });
+      }
+
+      if (pool.asset1) {
+        assets.push({
+          id: pool.asset1.id,
+          symbol: pool.asset1.symbol,
+          decimals: pool.asset1.decimals,
+        });
+      }
+    });
+
+    // Remove duplicates based on `id`
+    const uniqueAssets = assets.filter(
+      (asset, index, self) =>
+        index === self.findIndex((a) => a.id === asset.id),
+    );
+
+    return uniqueAssets;
   }
 
   /**
@@ -48,12 +135,12 @@ export class MiraAPIService {
    * @param tradeType - Type of trade
    * @returns - Promise of an array of routes
    */
-  async getBestRoute(
+  async getRoute(
     input: string,
     output: string,
     amount: number,
     tradeType: string = 'ExactOutput',
-  ): Promise<BestRoute> {
+  ): Promise<Route> {
     const data = {
       input,
       output,
@@ -65,7 +152,7 @@ export class MiraAPIService {
     return retry
       .simple(
         async () => {
-          const response = await axios
+          const response = await axiosInstance
             .post<FindRouteResponse>(
               MiraAPIService.BASE_URL + '/find_route',
               data,
@@ -92,14 +179,55 @@ export class MiraAPIService {
         3, // Number of retries
         10000, // Delay between retries in milliseconds
       )
-      .then((r) => {
-        return <BestRoute>{
+      .then(async (r) => {
+        let previewed: Amounts = {
           inputAmount: r.result.input_amount,
           outputAmount: r.result.output_amount,
+        };
+
+        switch (tradeType) {
+          case 'ExactOutput': {
+            const preview = await this.miraAmmReadonly.previewSwapExactOutput(
+              { bits: output },
+              amount,
+              toPools(r.result.path),
+            );
+
+            previewed.inputAmount = preview[1].toString();
+            break;
+          }
+          case 'ExactInput': {
+            const preview = await this.miraAmmReadonly.previewSwapExactInput(
+              { bits: input },
+              amount,
+              toPools(r.result.path),
+            );
+
+            previewed.outputAmount = preview[1].toString();
+            break;
+          }
+        }
+        return <Route>{
+          raw: {
+            inputAmount: r.result.input_amount,
+            outputAmount: r.result.output_amount,
+          },
+          previewed: previewed,
           path: r.result.path,
         };
       });
   }
+}
+
+export class MiraAPIFullService extends MiraAPIService {
+  private wallet: FuelWallet;
+  private miraAmm: MiraAmm;
+  constructor(provider: Provider, wallet: FuelWallet) {
+    super(provider);
+    this.wallet = wallet;
+    this.miraAmm = new MiraAmm(wallet.getWallet());
+  }
+
   async swap(
     input: string,
     output: string,
@@ -107,17 +235,13 @@ export class MiraAPIService {
     path: PathStep[],
     kind: string = 'ExactOutput',
   ): Promise<string> {
-    const pools: PoolId[] = path.map((step: PathStep): PoolId => {
-      return [{ bits: `0x${step[0]}` }, { bits: `0x${step[1]}` }, step[2]];
-    });
-
     switch (kind) {
       case 'ExactOutput': {
         const txRequest = await this.miraAmm.swapExactOutput(
           amount,
           { bits: output },
           input,
-          pools,
+          toPools(path),
           await futureDeadline(this.provider),
           { gasLimit: 999_999, maxFee: 999_99 },
         );
@@ -130,7 +254,7 @@ export class MiraAPIService {
           { bits: output },
           // Min output in USDC token
           input,
-          pools,
+          toPools(path),
           await futureDeadline(this.provider),
           { gasLimit: 999_999, maxFee: 999_99 },
         );
@@ -140,4 +264,10 @@ export class MiraAPIService {
 
     throw Error('ERROR');
   }
+}
+
+function toPools(path: PathStep[]): PoolId[] {
+  return path.map((step: PathStep): PoolId => {
+    return [{ bits: `0x${step[0]}` }, { bits: `0x${step[1]}` }, step[2]];
+  });
 }
