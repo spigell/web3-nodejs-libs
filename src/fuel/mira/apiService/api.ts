@@ -3,7 +3,7 @@ import { MiraAmm, PoolId, ReadonlyMiraAmm } from 'mira-dex-ts';
 import * as retry from '../../../utils/retry.js';
 import { FuelWallet } from '../../wallet/wallet.js';
 import { futureDeadline } from './utils.js';
-import { Provider } from 'fuels';
+import { bn, Provider } from 'fuels';
 
 // Configure axios instance with timeout
 const axiosInstance = axios.create({
@@ -243,8 +243,11 @@ export class MiraAPIFullService extends MiraAPIService {
           input,
           toPools(path),
           await futureDeadline(this.provider),
-          { gasLimit: 999_999, maxFee: 999_99 },
+          { gasLimit: 1_200_000, maxFee: 9_999 },
         );
+        // Hack
+        txRequest.maxFee = bn(9_999);
+
         return await this.wallet.send(txRequest);
       }
 
@@ -256,8 +259,11 @@ export class MiraAPIFullService extends MiraAPIService {
           input,
           toPools(path),
           await futureDeadline(this.provider),
-          { gasLimit: 999_999, maxFee: 999_99 },
+          { gasLimit: 1_200_000, maxFee: 9_999 },
         );
+        // Hack
+        txRequest.maxFee = bn(9_999);
+
         return await this.wallet.send(txRequest);
       }
     }
