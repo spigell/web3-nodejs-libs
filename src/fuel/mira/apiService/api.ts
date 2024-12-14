@@ -23,11 +23,6 @@ type PathStep = [string, string, boolean];
 // Define the response type for the `find_route` API
 export type Route = {
   path: PathStep[];
-  raw: Amounts;
-  previewed: Amounts;
-};
-
-type Amounts = {
   inputAmount: string;
   outputAmount: string;
 };
@@ -180,42 +175,53 @@ export class MiraAPIService {
         10000, // Delay between retries in milliseconds
       )
       .then(async (r) => {
-        let previewed: Amounts = {
+        return <Route>{
           inputAmount: r.result.input_amount,
           outputAmount: r.result.output_amount,
-        };
-
-        switch (tradeType) {
-          case 'ExactOutput': {
-            const preview = await this.miraAmmReadonly.previewSwapExactOutput(
-              { bits: output },
-              amount,
-              toPools(r.result.path),
-            );
-
-            previewed.inputAmount = preview[1].toString();
-            break;
-          }
-          case 'ExactInput': {
-            const preview = await this.miraAmmReadonly.previewSwapExactInput(
-              { bits: input },
-              amount,
-              toPools(r.result.path),
-            );
-
-            previewed.outputAmount = preview[1].toString();
-            break;
-          }
-        }
-        return <Route>{
-          raw: {
-            inputAmount: r.result.input_amount,
-            outputAmount: r.result.output_amount,
-          },
-          previewed: previewed,
           path: r.result.path,
         };
       });
+  }
+
+  async preview(
+    input: string,
+    output: string,
+    rawRoute: Route,
+    amount: number,
+    tradeType: string = 'ExactOutput',
+  ): Promise<Route> {
+    let previewed: Route = {
+      path: rawRoute.path,
+      inputAmount: rawRoute.inputAmount,
+      outputAmount: rawRoute.outputAmount,
+    };
+
+    switch (tradeType) {
+      case 'ExactOutput': {
+        const preview = await this.miraAmmReadonly.previewSwapExactOutput(
+          { bits: output },
+          amount,
+          toPools(rawRoute.path),
+        );
+
+        previewed.inputAmount = preview[1].toString();
+        break;
+      }
+      case 'ExactInput': {
+        const preview = await this.miraAmmReadonly.previewSwapExactInput(
+          { bits: input },
+          amount,
+          toPools(rawRoute.path),
+        );
+
+        previewed.outputAmount = preview[1].toString();
+        break;
+      }
+      default: {
+        throw `Invalid tradeType ${tradeType}`;
+      }
+    }
+    return previewed;
   }
 }
 
