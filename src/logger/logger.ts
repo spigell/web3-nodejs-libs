@@ -28,6 +28,10 @@ export class Logging {
     });
   }
 
+  clone(): Logging {
+    return new Logging(this.getLogger().level);
+  }
+
   generateLogId(): string {
     return randomBytes(16).toString('hex');
   }

@@ -3,6 +3,7 @@ import { MiraAmm, PoolId, ReadonlyMiraAmm } from 'mira-dex-ts';
 import * as retry from '../../../utils/retry.js';
 import { FuelWallet } from '../../wallet/wallet.js';
 import { futureDeadline } from './utils.js';
+import { Coin } from './coin.js';
 import { bn, Provider } from 'fuels';
 
 // Configure axios instance with timeout
@@ -28,7 +29,7 @@ export type Route = {
 };
 
 // Define the structure of a Coin
-type Coin = {
+export type CoinListing = {
   id: string;
   symbol: string;
   decimals: number;
@@ -97,19 +98,15 @@ export class MiraAPIService {
 
     response.result.data.data.pools.forEach((pool: any) => {
       if (pool.asset0) {
-        assets.push({
-          id: pool.asset0.id,
-          symbol: pool.asset0.symbol,
-          decimals: pool.asset0.decimals,
-        });
+        assets.push(
+          new Coin(pool.asset0.id, pool.asset0.symbol, pool.asset0.decimals),
+        );
       }
 
       if (pool.asset1) {
-        assets.push({
-          id: pool.asset1.id,
-          symbol: pool.asset1.symbol,
-          decimals: pool.asset1.decimals,
-        });
+        assets.push(
+          new Coin(pool.asset1.id, pool.asset1.symbol, pool.asset1.decimals),
+        );
       }
     });
 
@@ -120,6 +117,23 @@ export class MiraAPIService {
     );
 
     return uniqueAssets;
+  }
+
+  /**
+   * Retrieve a coin from the list by symbol or id.
+   * @param key - Symbol or ID of the coin
+   * @returns - The matching coin
+   * @throws - Error if no coin is found with the given symbol or ID
+   */
+  async getCoin(key: string): Promise<Coin> {
+    const coins = await this.getCoinsWithDecimals();
+    const coin = coins.find((coin) => coin.symbol === key || coin.id === key);
+
+    if (!coin) {
+      throw new Error(`Coin with symbol or ID "${key}" not found.`);
+    }
+
+    return new Coin(coin.id, coin.symbol, coin.decimals);
   }
 
   /**
